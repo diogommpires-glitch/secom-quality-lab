@@ -97,10 +97,14 @@ THE SOFTWARE.
 
 ## Industrial vision extension
 
-KolektorSDD2 images and annotations are licensed CC BY-NC-SA4.0 by ViCoS/Kolektor. Dataset provenance, citation and the explicit duplicate-pair review are in docs/VISION_DATA_CARD.md. Data licensing is separate from the MIT project code.
+KolektorSDD2 images and annotations are licensed CC BY-NC-SA4.0 by ViCoS/Kolektor. Dataset provenance, citation and the explicit duplicate-pair review are in docs/VISION_DATA_CARD.md. Data licensing is separate from the project code's non-commercial terms.
 
 SuperSimpleNet executable adapters and unmodified source snapshots under src/secom_quality/vision/vendor are derived from https://github.com/blaz-r/SuperSimpleNet, pinned to commit98ab4d5fbdcdef528fafbc42e4b5ee15f08f5a7d. Its MIT notice and source/adaptation hashes are retained in that directory. Cite Rolih, Fučka and Skočaj (ICPR2024; JIMS2025). Adaptations include optional offline backbone initialization, local training/checkpointing, aspect-preserving letterboxing,100epochs/batch8 and BF16CUDA training.
 
 PatchCore is implemented as a documented bounded approximation of the method described by Roth et al., Towards Total Recall in Industrial Anomaly Detection (CVPR2022): https://github.com/amazon-science/patchcore-inspection. No published benchmark-trained checkpoints are included. Backbone initialization uses official TorchVision ImageNet weights.
 
 MVTec AD2 is a separate benchmark under its publisher's dataset terms (CC BY-NC-SA4.0): https://www.mvtec.com/research-teaching/datasets/mvtec-ad-2. Private anomaly maps are prepared locally; the application does not submit them externally.
+
+## Original separate data notice
+
+The original project licence recorded: "The SECOM dataset is separately licensed under CC BY 4.0. See docs/DATA_CARD.md." The dataset and original data card are excluded from this code-only repository. External datasets retain their own licences. The project non-commercial licence does not relicense third-party material.

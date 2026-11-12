@@ -7,7 +7,7 @@ name = "secom-quality-lab"
 version = "1.0.0"
 description = "Reproducible semiconductor inspection prioritisation research and local application"
 requires-python = ">=3.12,<3.13"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 readme = "README.md"
 dependencies = [
   "numpy>=2.2,<3", "pandas>=2.2,<4", "scipy>=1.14,<2",

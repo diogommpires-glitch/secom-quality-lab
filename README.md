@@ -1,6 +1,6 @@
 # SECOM Quality Lab
 
-Private code snapshot of a semiconductor inspection prioritisation research application, with a Python service, React interface and industrial vision extension.
+Code-only source snapshot of a semiconductor inspection prioritisation research application, with a Python service, React interface and industrial vision extension.
 
 This repository contains source code, tests, dependency locks and third-party notices. Datasets, trained models, experiment outputs, historical reports, exports, local credentials and machine-specific launch configuration are excluded. Risk scores are uncalibrated. This is retrospective research and is not validated factory software.
 

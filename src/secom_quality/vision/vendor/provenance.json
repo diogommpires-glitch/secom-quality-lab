@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/blaz-r/SuperSimpleNet",
+  "commit": "98ab4d5fbdcdef528fafbc42e4b5ee15f08f5a7d",
+  "license": "MIT",
+  "original_sha256": {
+    "common_loss.py": "97b649b1fd3d5f68b32ba7f23ab514b4b5a7963df31ea7ab43a36eaf0ad6c586",
+    "common_perlin_noise.py": "529e1fde5a6d5d46e81eab59d3648d50473f7ebbe03bdbaf9e35470c72d3e7d2",
+    "datamodules_base_dataset.py": "4ce7ea55ac6597530e5b4d3e28ec556f3308415c5d89a5dc7376f244cd05eec3",
+    "model_feature_extractor.py": "f727dfd1152f8158d25d144633339c2a66eee2c33435835835652b53be84186b",
+    "model_supersimplenet.py": "22550a4bbc08547c034aa9e12c2399dbdf62f3ccab32ddde39721f510adbf056",
+    "train.py": "8cc9aeb1b90f0149890d931d014db1a2b86e408ef4dae17b83ea172ddc85ef01"
+  },
+  "adaptations": [
+    "Relative package imports.",
+    "FeatureExtractor pretrained=False option permits offline tensor-only reload; training defaults True.",
+    "Local training adapter never calls author test/normalization functions."
+  ]
+}

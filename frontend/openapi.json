@@ -1,0 +1,914 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SECOM Quality Lab",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "summary": "Live",
+        "operationId": "live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Ready",
+        "operationId": "ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model": {
+      "get": {
+        "summary": "Model",
+        "operationId": "model_api_v1_model_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feature-schema": {
+      "get": {
+        "summary": "Schema",
+        "operationId": "schema_api_v1_feature_schema_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feature-schema/template": {
+      "get": {
+        "summary": "Template",
+        "operationId": "template_api_v1_feature_schema_template_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/data-audit": {
+      "get": {
+        "summary": "Data Audit",
+        "operationId": "data_audit_api_v1_data_audit_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/experiments": {
+      "get": {
+        "summary": "Experiments",
+        "operationId": "experiments_api_v1_experiments_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/study-report": {
+      "get": {
+        "summary": "Study Report",
+        "operationId": "study_report_api_v1_study_report_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/predictions": {
+      "post": {
+        "summary": "Predict",
+        "operationId": "predict_api_v1_predictions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches": {
+      "get": {
+        "summary": "Batches",
+        "operationId": "batches_api_v1_batches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Batch",
+        "operationId": "create_batch_api_v1_batches_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_batch_api_v1_batches_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{batch_id}": {
+      "get": {
+        "summary": "Get Batch",
+        "operationId": "get_batch_api_v1_batches__batch_id__get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{batch_id}/predictions": {
+      "get": {
+        "summary": "Batch Predictions",
+        "operationId": "batch_predictions_api_v1_batches__batch_id__predictions_get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/batches/{batch_id}/export": {
+      "get": {
+        "summary": "Export",
+        "operationId": "export_api_v1_batches__batch_id__export_get",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/inputs": {
+      "get": {
+        "summary": "Demo Inputs",
+        "operationId": "demo_inputs_api_v1_demo_inputs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/replays": {
+      "post": {
+        "summary": "Create Replay",
+        "operationId": "create_replay_api_v1_demo_replays_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/replays/{stream_id}/advance": {
+      "post": {
+        "summary": "Advance Replay",
+        "operationId": "advance_replay_api_v1_demo_replays__stream_id__advance_post",
+        "parameters": [
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stream Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/demo/replays/{stream_id}/pause": {
+      "post": {
+        "summary": "Pause Replay",
+        "operationId": "pause_replay_api_v1_demo_replays__stream_id__pause_post",
+        "parameters": [
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stream Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/streams": {
+      "get": {
+        "summary": "Streams",
+        "operationId": "streams_api_v1_monitoring_streams_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/streams/{stream_id}": {
+      "get": {
+        "summary": "Stream",
+        "operationId": "stream_api_v1_monitoring_streams__stream_id__get",
+        "parameters": [
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stream Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/monitoring/streams/{stream_id}/windows": {
+      "get": {
+        "summary": "Windows",
+        "operationId": "windows_api_v1_monitoring_streams__stream_id__windows_get",
+        "parameters": [
+          {
+            "name": "stream_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stream Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdvanceRequest": {
+        "properties": {
+          "expected_cursor": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Cursor"
+          },
+          "steps": {
+            "type": "integer",
+            "title": "Steps",
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_cursor"
+        ],
+        "title": "AdvanceRequest"
+      },
+      "BatchResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "title": "Batch Id"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "bundle_id": {
+            "type": "string",
+            "title": "Bundle Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "validation_issues": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Validation Issues"
+          },
+          "eligible_count": {
+            "type": "integer",
+            "title": "Eligible Count"
+          },
+          "review_capacity": {
+            "type": "integer",
+            "title": "Review Capacity"
+          },
+          "abstain_count": {
+            "type": "integer",
+            "title": "Abstain Count"
+          },
+          "predictions": {
+            "items": {
+              "$ref": "#/components/schemas/PredictionResponse"
+            },
+            "type": "array",
+            "title": "Predictions"
+          },
+          "queue_policy_id": {
+            "type": "string",
+            "title": "Queue Policy Id"
+          },
+          "replayed": {
+            "type": "boolean",
+            "title": "Replayed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "batch_id",
+          "row_count",
+          "bundle_id",
+          "model_id",
+          "validation_issues",
+          "eligible_count",
+          "review_capacity",
+          "abstain_count",
+          "predictions",
+          "queue_policy_id"
+        ],
+        "title": "BatchResponse"
+      },
+      "Body_create_batch_api_v1_batches_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "client_request_id": {
+            "type": "string",
+            "title": "Client Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "client_request_id"
+        ],
+        "title": "Body_create_batch_api_v1_batches_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PredictionRequest": {
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "title": "Record Id"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "sensors": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Sensors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "record_id",
+          "sensors"
+        ],
+        "title": "PredictionRequest"
+      },
+      "PredictionResponse": {
+        "properties": {
+          "prediction_id": {
+            "type": "string",
+            "title": "Prediction Id"
+          },
+          "record_id": {
+            "type": "string",
+            "title": "Record Id"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "calibrated_probability": {
+            "type": "null",
+            "title": "Calibrated Probability"
+          },
+          "score_kind": {
+            "type": "string",
+            "const": "uncalibrated",
+            "title": "Score Kind"
+          },
+          "calibration_status": {
+            "type": "string",
+            "const": "not_validated",
+            "title": "Calibration Status",
+            "default": "not_validated"
+          },
+          "feature_schema_version": {
+            "type": "string",
+            "title": "Feature Schema Version",
+            "default": "secom-sensors-v1"
+          },
+          "quality_status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "warning",
+              "abstain"
+            ],
+            "title": "Quality Status"
+          },
+          "quality_reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Quality Reason Codes"
+          },
+          "missingness": {
+            "type": "number",
+            "title": "Missingness"
+          },
+          "range_violation_count": {
+            "type": "integer",
+            "title": "Range Violation Count"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "title": "Input Fingerprint"
+          },
+          "bundle_id": {
+            "type": "string",
+            "title": "Bundle Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "review_recommended": {
+            "type": "boolean",
+            "title": "Review Recommended",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "prediction_id",
+          "record_id",
+          "risk_score",
+          "score_kind",
+          "quality_status",
+          "quality_reason_codes",
+          "missingness",
+          "range_violation_count",
+          "input_fingerprint",
+          "bundle_id",
+          "model_id"
+        ],
+        "title": "PredictionResponse"
+      },
+      "ReplayRequest": {
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "title": "Scenario",
+            "default": "baseline"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ReplayRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

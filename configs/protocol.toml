@@ -1,0 +1,12 @@
+version = "secom-study-v1"
+capacity_fraction = 0.10
+secondary_capacity_fraction = 0.20
+development_end = 1096
+forward_boundaries = [438, 767, 1096]
+seed = 20261026
+bootstrap_samples = 2000
+selection = "mean forward recall at 10% capacity; mean average precision; frozen simplicity order"
+calibration = "none; risk scores are uncalibrated"
+promotable_configurations = 16
+diagnostic_configurations = 2
+abstain_missingness = 0.50

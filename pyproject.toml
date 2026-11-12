@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "secom-quality-lab"
+version = "1.0.0"
+description = "Reproducible semiconductor inspection prioritisation research and local application"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+readme = "README.md"
+dependencies = [
+  "numpy>=2.2,<3", "pandas>=2.2,<4", "scipy>=1.14,<2",
+  "scikit-learn>=1.6,<2", "pyarrow>=18", "pydantic>=2.10,<3",
+  "typer>=0.15", "fastapi>=0.115", "uvicorn>=0.34",
+  "python-multipart>=0.0.20", "skops>=0.11", "matplotlib>=3.9",
+  "threadpoolctl>=3.5", "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov>=6", "ruff>=0.11", "mypy>=1.15", "build>=1.2", "psutil>=6", "playwright>=1.50"]
+
+[project.scripts]
+secom = "secom_quality.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/secom_quality"]
+artifacts = ["src/secom_quality/web/**"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/secom_quality/vision/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["research: full pinned-data research acceptance", "browser: real browser workflows"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["secom_quality.vision.vendor.*"]
+ignore_errors = true

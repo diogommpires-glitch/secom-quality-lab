@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+*.parquet binary
+*.skops binary
+*.webm binary
+*.zip binary

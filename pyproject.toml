@@ -27,6 +27,9 @@ secom = "secom_quality.cli:app"
 packages = ["src/secom_quality"]
 artifacts = ["src/secom_quality/web/**"]
 
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/secom_quality/web/**"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

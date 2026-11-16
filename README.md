@@ -25,6 +25,8 @@ pnpm build
 
 The frontend build writes the service's packaged web assets. No generated web bundle is included in this snapshot. Tests requiring retained datasets, model weights, GPU environments, experiment plans or historical evidence are outside this code-only snapshot. No research result is reproduced by publishing the code.
 
+To build distributions with the viewer, run `pnpm build` in `frontend` before running `uv build` from the repository root. Both the source distribution and wheel then include the generated console assets. Trained models and datasets remain excluded.
+
 GitHub Actions runs the explicit CPU/synthetic regression suite on Windows and Ubuntu, including the audit boundary regressions, plus Ruff formatting, lint and mypy. Optional Torch cases are skipped when that separate environment is absent. The frontend checks run on Ubuntu with Node.js 26.2.0 and pnpm 11.25.0. Action revisions and package-manager versions are pinned; dependency installation uses the committed lockfiles. Gitleaks 8.30.1 scans the checked Git tree with redacted findings. No dataset, GPU or paid-resource workflow is included.
 
 Original project code uses the PolyForm Noncommercial License 1.0.0. See `LICENSE` and `LICENSING.md`. Dataset and third-party licences remain separate; see `THIRD_PARTY_NOTICES.md` and the vendored licence.

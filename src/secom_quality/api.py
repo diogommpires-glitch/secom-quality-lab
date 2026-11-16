@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 
 from .contracts import FEATURE_NAMES, LIMITATION, SCHEMA_VERSION, LoadedBundle
@@ -292,10 +293,12 @@ def create_app(root: Path, bundle_path: Path | None = None) -> FastAPI:
     async def create_batch(
         file: Annotated[UploadFile, File()], client_request_id: Annotated[str, Form()]
     ):
-        content = await file.read(MAX_UPLOAD_BYTES + 1)
-        await file.close()
-        records = parse_csv(content)
-        return process_batch(root, records, client_request_id, bundle())
+        try:
+            content = await file.read(MAX_UPLOAD_BYTES + 1)
+        finally:
+            await file.close()
+        records = await run_in_threadpool(parse_csv, content)
+        return await run_in_threadpool(process_batch, root, records, client_request_id, bundle())
 
     @app.get("/api/v1/batches")
     def batches():

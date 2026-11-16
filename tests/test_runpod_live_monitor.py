@@ -56,11 +56,12 @@ def live(tmp_path):
     request = runtime / "task-fixture.json"
     write_json(request, {"kind": "development", "config_id": "a", "seed": 77, "fold": 0})
     write_process(proc, 41, 1, ["python", "/code/parallel_study.py", "--workspace", str(root)])
+    write_json(runtime / "job-identity.json", monitor.process(41, proc))
     write_process(
         proc,
         42,
         41,
-        ["python", "/code/parallel_study.py", "--worker", str(request)],
+        ["python", "/code/parallel_study.py", "--workspace", str(root), "--worker", str(request)],
         reads=500,
         cpu=100,
     )
@@ -285,3 +286,39 @@ def test_sampler_never_precreates_the_fresh_pilot_output(tmp_path):
     record = {"operational_benchmark": {"pilot": {"pid": 9}, "output": str(output)}}
     monitor.record_benchmark_sample(record)
     assert not output.exists()
+
+
+def test_coordinator_requires_bound_creation_and_workspace(live):
+    root, proc, runtime = live
+    identity = monitor.process(41, proc)
+    write_process(proc, 41, 1, identity["command"], start=99)
+    assert not sample(live)["coordinator_alive"]
+    write_process(
+        proc,
+        41,
+        1,
+        ["python", "/code/parallel_study.py", "--workspace", str(root.parent / "other")],
+    )
+    write_json(runtime / "job-identity.json", monitor.process(41, proc))
+    assert not sample(live)["coordinator_alive"]
+
+
+def test_coordinator_cpu_and_io_progress_without_workers(live):
+    _, proc, runtime = live
+    import shutil
+
+    shutil.rmtree(proc / "42")
+    first = sample(live)
+    command = monitor.process(41, proc)["command"]
+    write_process(proc, 41, 1, command, cpu=500, reads=200)
+    second = sample(live, first, now=105)
+    assert second["activity"] == "cpu_work" and not second["workers"]
+    assert second["coordinator"]["cpu_seconds_delta"] == 5
+    write_process(proc, 41, 1, command, cpu=500, reads=400)
+    third = sample(live, second, now=110)
+    assert third["activity"] == "io_progress"
+    write_process(proc, 41, 1, command, start=88, cpu=9000, reads=9000)
+    write_json(runtime / "job-identity.json", monitor.process(41, proc))
+    replacement = sample(live, third, now=115)
+    assert replacement["activity"] == "waiting"
+    assert "cpu_seconds_delta" not in replacement["coordinator"]

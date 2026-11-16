@@ -25,9 +25,22 @@ from PIL import Image
 from scipy.ndimage import label as connected_components
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-from secom_quality.common import fingerprint, read_json, sha256_file, utc_now, write_json
+from secom_quality.common import fingerprint, utc_now, write_json
+from secom_quality.common import read_json as _read_json
+from secom_quality.common import sha256_file as _sha256_file
 
+from . import ad2_storage as _relocation
 from .data import immutable_json
+from .metrics import PRO_METRIC_REVISION, partial_pro_area
+
+
+def read_json(path: Path):
+    return _read_json(_relocation.resolve(path))
+
+
+def sha256_file(path: Path) -> str:
+    return _sha256_file(_relocation.resolve(path))
+
 
 CATEGORIES = ("can", "fabric", "fruit_jelly", "rice", "sheet_metal", "vial", "wallplugs", "walnuts")
 # Publisher counts: train, validation, public-good, public-bad, EACH private split.
@@ -186,7 +199,7 @@ def _index(staging: Path) -> tuple[list[dict], list[dict], dict]:
                     "label": 0 if kind == "good" else 1 if kind == "bad" else None,
                 }
                 if partition == "development":
-                    with Image.open(path) as image:
+                    with Image.open(_relocation.resolve(path)) as image:
                         if image.format != "PNG" or image.width * image.height > 20_000_000:
                             raise ValueError("Invalid AD2 normal image")
                         image.verify()
@@ -292,18 +305,17 @@ def _verify_source(base: Path) -> dict:
     ):
         raise ValueError("AD2 source fingerprint mismatch")
     actual = {
-        path.relative_to(base).as_posix()
+        f"{partition}/{name}"
         for partition in ("source", "development", "protected")
-        for path in (base / partition).rglob("*")
-        if path.is_file()
+        for name in _relocation.names(base / partition)
     }
     if actual != set(manifest["files"]) | {"source/manifest.json"}:
         raise ValueError("AD2 source has missing or unexpected files")
     for name, digest in manifest["files"].items():
-        candidate = base / name
+        candidate = _relocation.member(base, name)
         if (
             candidate.is_symlink()
-            or not candidate.resolve().is_relative_to(base.resolve())
+            or not candidate.resolve().is_relative_to(_relocation.member_root(base, name).resolve())
             or sha256_file(candidate) != digest
         ):
             raise ValueError("AD2 source checksum mismatch")
@@ -342,11 +354,13 @@ def freeze_ad2(root: Path, source: dict | None = None) -> dict:
         "overlap": OVERLAP,
         "stitching": "Original coordinates, uniform overlap average; image score maximum stitched pixel score.",
         "fit": "Normal train images only; validation never enters memory bank.",
-        "metrics": "All8category image AP/AUROC and201quantile AU-PRO30 approximation; macro average; no official private score claim.",
+        "metrics": "All8category image AP/AUROC and201quantile checked AU-PRO30 approximation; legacy30 separate; macro average; no official private score claim.",
+        "metric_revision": PRO_METRIC_REVISION,
+        "storage": _relocation.provenance(),
         "dependencies": dependency_versions(),
         "code": {
             name: sha256_file(Path(__file__).parent / name)
-            for name in ("ad2.py", "models.py", "transforms.py")
+            for name in ("ad2.py", "ad2_storage.py", "metrics.py", "models.py", "transforms.py")
         },
     }
     protocol["protocol_hash"] = fingerprint(protocol)
@@ -397,7 +411,7 @@ def _tiles(image: Image.Image, directory: Path, identity: str) -> list[dict]:
 
 
 def predict_tiled(predictor: Any, image_path: Path, scratch: Path) -> tuple[float, np.ndarray]:
-    with Image.open(image_path) as original:
+    with Image.open(_relocation.resolve(image_path)) as original:
         image = original.convert("RGB")
     rows = _tiles(image, scratch, str(image_path))
     total = np.zeros((image.height, image.width), dtype=np.float64)
@@ -431,19 +445,19 @@ def au_pro_30(records: list[dict], base: Path) -> dict:
     samples = []
     budget = max(1, 1_000_000 // len(records))
     for row in records:
-        score = np.load(row["map_path"], mmap_mode="r", allow_pickle=False)
+        score = np.load(_relocation.resolve(row["map_path"]), mmap_mode="r", allow_pickle=False)
         samples.append(np.asarray(score).ravel()[:: max(1, math.ceil(score.size / budget))])
     edges = np.unique(np.quantile(np.concatenate(samples), np.linspace(0, 1, 201)))
     normal_hist, region_hist = np.zeros(len(edges) + 1), np.zeros(len(edges) + 1)
     regions = normal_pixels = 0
     for row in records:
-        score = np.load(row["map_path"], mmap_mode="r", allow_pickle=False)
+        score = np.load(_relocation.resolve(row["map_path"]), mmap_mode="r", allow_pickle=False)
         if not np.isfinite(score).all():
             raise ValueError("Nonfinite AD2 map")
         if row["mask_path"] is None:
             mask = np.zeros(score.shape, dtype=bool)
         else:
-            with Image.open(base / row["mask_path"]) as image:
+            with Image.open(_relocation.resolve(base / row["mask_path"])) as image:
                 mask = np.asarray(image.convert("L")) > 0
         if mask.shape != score.shape:
             raise ValueError("AD2 mask/map alignment mismatch")
@@ -461,6 +475,8 @@ def au_pro_30(records: list[dict], base: Path) -> dict:
     if not regions or not normal_pixels:
         return {
             "au_pro_30": None,
+            "au_pro_30_legacy": None,
+            "metric_revision": PRO_METRIC_REVISION,
             "regions": regions,
             "normal_pixels": normal_pixels,
             "method": method,
@@ -475,7 +491,9 @@ def au_pro_30(records: list[dict], base: Path) -> dict:
     keep = xs < 0.3
     x, y = np.r_[xs[keep], 0.3], np.r_[ys[keep], np.interp(0.3, xs, ys)]
     return {
-        "au_pro_30": float(np.trapezoid(y, x) / 0.3),
+        "au_pro_30": partial_pro_area(xs, ys),
+        "au_pro_30_legacy": float(np.trapezoid(y, x) / 0.3),
+        "metric_revision": PRO_METRIC_REVISION,
         "regions": regions,
         "normal_pixels": normal_pixels,
         "method": method,
@@ -484,10 +502,10 @@ def au_pro_30(records: list[dict], base: Path) -> dict:
 
 def _verify_files(directory: Path, files: dict) -> None:
     for name, digest in files.items():
-        path = directory / name
+        path = _relocation.member(directory, name)
         if (
             path.is_symlink()
-            or not path.resolve().is_relative_to(directory.resolve())
+            or not path.resolve().is_relative_to(_relocation.member_root(directory, name).resolve())
             or sha256_file(path) != digest
         ):
             raise ValueError("AD2 research artifact checksum mismatch")
@@ -516,7 +534,7 @@ def _fit_category(base: Path, category: str, development: list[dict], protocol: 
     rows = []
     for row in development:
         if row["category"] == category and row["split"] == "train" and row["label"] == 0:
-            with Image.open(base / row["image_path"]) as image:
+            with Image.open(_relocation.resolve(base / row["image_path"])) as image:
                 rows.extend(_tiles(image.convert("RGB"), cache, row["record_id"]))
     if not rows or len(rows) > 50_000:
         raise ValueError("AD2 normal training tile count must be1..50,000percategory")
@@ -617,11 +635,7 @@ def _verify_report(base: Path, protocol: dict, access: dict) -> dict:
         or report.get("access_hash") != access["access_hash"]
     ):
         raise ValueError("AD2 report belongs to another frozen model/access record")
-    actual = {
-        path.relative_to(research).as_posix()
-        for path in (research / "public").rglob("*")
-        if path.is_file()
-    }
+    actual = {f"public/{name}" for name in _relocation.names(research / "public")}
     if actual != set(report["files"]):
         raise ValueError("AD2 completed public results have missing or unexpected files")
     _verify_files(research, report["files"])
@@ -743,12 +757,13 @@ def _run_ad2(root: Path, device: str, source: dict) -> dict:
         "protocol_hash": protocol["protocol_hash"],
         "access_hash": access["access_hash"],
         "categories": summaries,
+        "metric_revision": PRO_METRIC_REVISION,
         "files": files,
         "macro": {
             key: float(np.mean([row[key] for row in summaries]))
             if all(row[key] is not None for row in summaries)
             else None
-            for key in ("image_average_precision", "image_auroc", "au_pro_30")
+            for key in ("image_average_precision", "image_auroc", "au_pro_30", "au_pro_30_legacy")
         },
         "limitations": [
             "Separate normal-only challenge; not transfer validation of supervised KSDD2.",

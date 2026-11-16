@@ -180,3 +180,25 @@ def test_missing_vision_readiness_does_not_hide_sensor_routes(tmp_path):
         assert response.status_code == 503 and response.json()["ready"] is False
         assert http.get("/health/live").status_code == 200
         assert http.get("/api/v2/vision/unknown").status_code == 404
+
+
+def test_corrupt_deflate_returns_validation_error_without_partial_batch(client):
+    http, root = client
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.writestr("good.png", png())
+    healthy = stream.getvalue()
+    corrupt = bytearray(healthy)
+    data_start = 30 + int.from_bytes(corrupt[26:28], "little")
+    data_start += int.from_bytes(corrupt[28:30], "little")
+    corrupt[data_start] = 0xFF
+    response = http.post(
+        "/api/v2/vision/batches",
+        files={"file": ("batch.zip", bytes(corrupt))},
+        data={"client_request_id": "corrupt-deflate"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "archive_decode"
+    assert not VisionStore(root).list()
+    assert not (root / "vision/assets").exists()
+    assert len(inference.parse_upload(healthy, "batch.zip")) == 1

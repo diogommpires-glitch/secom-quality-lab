@@ -13,6 +13,9 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.runpod.process_identity import process
 from secom_quality.common import fingerprint, read_json, utc_now, write_json
 from secom_quality.vision.study import exclusive
 
@@ -167,33 +170,37 @@ def run(root: Path, gpus: list[str], include_ad2: bool = True):
     )
 
     root = root.resolve()
-    os.environ["CUDA_VISIBLE_DEVICES"] = gpus[0]
-    for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
-        os.environ[variable] = "4"
-    import torch
-    from threadpoolctl import threadpool_limits
-
-    torch.set_num_threads(4)
-    numerical_threads = threadpool_limits(limits=4)
     runtime = root / "vision/runtime"
     (runtime / "runpod").mkdir(parents=True, exist_ok=True)
-    (runtime / "runpod/job.pid").write_text(str(os.getpid()) + "\n", encoding="utf-8")
-    state: dict[str, Any] = {
-        "pid": os.getpid(),
-        "started_at": utc_now(),
-        "gpus": gpus,
-        "platform": "RunPod Linux",
-    }
-
-    def status(phase, outcome="running", **extra):
-        if outcome == "running" and (runtime / "STOP_REQUESTED").exists():
-            raise KeyboardInterrupt("Remote stop requested before starting another phase")
-        state.update(phase=phase, state=outcome, updated_at=utc_now(), **extra)
-        write_json(runtime / "run.json", state)
-        write_json(runtime / "runpod/status.json", state)
-        print(json.dumps(state), flush=True)
-
     with exclusive(runtime / "runpod-coordinator.lock"):
+        identity = process(os.getpid())
+        if identity is None:
+            raise RuntimeError("Cannot establish the coordinator creation identity")
+        write_json(runtime / "runpod/job-identity.json", identity)
+        (runtime / "runpod/job.pid").write_text(str(os.getpid()) + "\n", encoding="utf-8")
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpus[0]
+        for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
+            os.environ[variable] = "4"
+        import torch
+        from threadpoolctl import threadpool_limits
+
+        torch.set_num_threads(4)
+        numerical_threads = threadpool_limits(limits=4)
+        state: dict[str, Any] = {
+            "pid": os.getpid(),
+            "started_at": utc_now(),
+            "gpus": gpus,
+            "platform": "RunPod Linux",
+        }
+
+        def status(phase, outcome="running", **extra):
+            if outcome == "running" and (runtime / "STOP_REQUESTED").exists():
+                raise KeyboardInterrupt("Remote stop requested before starting another phase")
+            state.update(phase=phase, state=outcome, updated_at=utc_now(), **extra)
+            write_json(runtime / "run.json", state)
+            write_json(runtime / "runpod/status.json", state)
+            print(json.dumps(state), flush=True)
+
         try:
             protocol = checked_protocol(root)
             status("initial_matrix", protocol_hash=protocol["protocol_hash"])

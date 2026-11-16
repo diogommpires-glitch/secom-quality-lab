@@ -6,6 +6,42 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 
 from secom_quality.evaluation import evaluate_scores
 
+PRO_METRIC_REVISION = "FPR-boundary-left-limit-v1"
+# Float64 histogram sums of inverse region sizes can span up to20million pixels.
+PRO_ROUNDOFF_TOLERANCE = 1e-8
+
+
+def partial_pro_area(xs, ys, limit=0.3):
+    """Normalise trapezoidal PRO area; vertical segments at the cutoff add zero area."""
+    xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+    if (
+        xs.ndim != 1
+        or xs.shape != ys.shape
+        or not len(xs)
+        or not np.isfinite(xs).all()
+        or not np.isfinite(ys).all()
+        or not 0 < limit <= 1
+        or xs[0] != 0
+        or xs[-1] < limit
+        or (np.diff(xs) < 0).any()
+    ):
+        raise ValueError(
+            "PRO integration requires an aligned finite ordered curve covering its FPR limit"
+        )
+    selected = xs <= limit
+    x, y = xs[selected], ys[selected]
+    if x[-1] < limit:
+        upper = int(np.searchsorted(xs, limit, side="left"))
+        lower = upper - 1
+        endpoint = ys[lower] + (ys[upper] - ys[lower]) * (
+            (limit - xs[lower]) / (xs[upper] - xs[lower])
+        )
+        x, y = np.r_[x, limit], np.r_[y, endpoint]
+    area = float(np.trapezoid(y, x) / limit)
+    if not -PRO_ROUNDOFF_TOLERANCE <= area <= 1 + PRO_ROUNDOFF_TOLERANCE:
+        raise ArithmeticError(f"Normalised PRO area outside [0,1]: {area}")
+    return min(1.0, max(0.0, area))
+
 
 def image_metrics(y, scores, ids):
     original_y = np.asarray(y)
@@ -93,7 +129,12 @@ def localization_metrics(masks, maps):
     components = [label(np.asarray(mask, bool)) for mask in masks]
     regions = sum(count for _, count in components)
     if not regions or not normal_count:
-        return {"pixel_average_precision": ap, "au_pro_30": None}
+        return {
+            "pixel_average_precision": ap,
+            "au_pro_30": None,
+            "au_pro_30_legacy": None,
+            "metric_revision": PRO_METRIC_REVISION,
+        }
     # Subsample only to choose thresholds; evaluate every pixel at each threshold.
     thresholds = np.unique(
         np.quantile(flat_s[:: max(1, len(flat_s) // 1_000_000)], np.linspace(0, 1, 201))
@@ -116,6 +157,8 @@ def localization_metrics(masks, maps):
     y = np.r_[ys[selected], np.interp(0.3, xs, ys)]
     return {
         "pixel_average_precision": ap,
-        "au_pro_30": float(np.trapezoid(y, x) / 0.3),
-        "au_pro_method": "201 empirical-quantile thresholds; original-size pixels; FPR range [0,0.3]",
+        "au_pro_30": partial_pro_area(xs, ys),
+        "au_pro_30_legacy": float(np.trapezoid(y, x) / 0.3),
+        "metric_revision": PRO_METRIC_REVISION,
+        "au_pro_method": "201 empirical-quantile thresholds; original-size pixels; checked FPR range [0,0.3]; legacy cutoff interpolation separately retained",
     }

@@ -85,6 +85,7 @@ def verify(base_url: str, root: Path, output: Path, server_pid: int | None) -> d
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+
         def local_only(route):
             if route.request.url.startswith(base_url.rstrip("/") + "/"):
                 route.continue_()

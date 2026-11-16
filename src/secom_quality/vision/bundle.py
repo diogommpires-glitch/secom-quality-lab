@@ -17,21 +17,23 @@ def dependency_versions():
 
 def build_bundle(root: Path):
     root = Path(root)
+    from .study import verified_final_artifacts
+
     research = root / "vision" / "research"
-    selection = read_json(research / "selection.json")
-    final = read_json(research / "final" / "report.json")
-    if final["selection_hash"] != selection["selection_hash"]:
-        raise ValueError("Final report and frozen selection differ")
     target = root / "vision" / "bundles" / "main"
     if target.exists():
         return load_verified_bundle(target)["manifest"]
+    verified = verified_final_artifacts(root)
+    final, selection = verified["report"], verified["selection"]
     staging = target.with_name("main.staging")
     staging.mkdir(parents=True, exist_ok=True)
     predictor = research / "final" / "models" / str(selection["seeds"][0])
     (staging / "predictor").mkdir(exist_ok=True)
-    for name in ("predictor.json", "weights.safetensors", "memory.safetensors"):
-        if (predictor / name).exists():
-            shutil.copy2(predictor / name, staging / "predictor" / name)
+    names = ["predictor.json", "weights.safetensors"]
+    if selection["config"].get("family") == "patchcore":
+        names.append("memory.safetensors")
+    for name in names:
+        shutil.copy2(predictor / name, staging / "predictor" / name)
     # Published aggregates only. No paths, image data, labels or per-image errors.
     public = {
         key: value
@@ -57,6 +59,10 @@ def build_bundle(root: Path):
         for p in sorted(staging.rglob("*"))
         if p.is_file()
     }
+    for name in names:
+        expected = verified["model_files"][f"models/{selection['serving_seed']}/{name}"]
+        if files[f"predictor/{name}"] != expected:
+            raise ValueError("Bundle copied predictor differs from verified final snapshot")
     manifest = {
         "schema_version": "industrial-vision-bundle-v1",
         "task": "visual_defect_detection",

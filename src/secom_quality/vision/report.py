@@ -1,19 +1,23 @@
 """Publish truthful aggregates and figures without copying evaluation images."""
 
+import hashlib
+import io
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from secom_quality.common import read_json, write_json
+from secom_quality.common import write_json
 
-from .study import checked_protocol, comparison
+from .study import checked_protocol, comparison, verified_final_artifacts
 
 
 def build_report(root: Path):
     root = Path(root)
     protocol = checked_protocol(root)
     research = root / "vision/research"
+    final_path = research / "final/report.json"
+    verified = verified_final_artifacts(root) if final_path.exists() else None
     output = root / "vision/reports"
     output.mkdir(parents=True, exist_ok=True)
     rows = comparison(root)
@@ -45,9 +49,14 @@ def build_report(root: Path):
         recall = f"{row['mean_recall_at_10pct']:.4f}" if row["valid"] else "pending/invalid"
         ap = f"{row['mean_image_ap']:.4f}" if row["valid"] else "pending/invalid"
         lines.append(f"| {row['model']} | {row['valid']} | {recall} | {ap} |")
-    final_path = research / "final/report.json"
-    if final_path.exists():
-        final = read_json(final_path)
+    if verified is not None:
+        final = verified["report"]
+        _figures(
+            research / "final/predictions.parquet",
+            final["serving_seed"],
+            output,
+            verified["checksums"]["predictions.parquet"],
+        )
         write_json(output / "published-report.json", final)
         lines += [
             "",
@@ -71,7 +80,6 @@ def build_report(root: Path):
             "",
             "Uncertainty and prespecified references are included in published-report.json. No final-based reselection is permitted.",
         ]
-        _figures(research / "final/predictions.parquet", final["serving_seed"], output)
     else:
         lines += [
             "",
@@ -92,7 +100,7 @@ def build_report(root: Path):
     return {"report": str(output / "study_report.md"), "final_evaluated": final_path.exists()}
 
 
-def _figures(path, seed, output):
+def _figures(path, seed, output, expected_sha256):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -101,7 +109,10 @@ def _figures(path, seed, output):
 
     from secom_quality.evaluation import capacity_metrics
 
-    frame = pd.read_parquet(path)
+    payload = Path(path).read_bytes()
+    if hashlib.sha256(payload).hexdigest() != expected_sha256:
+        raise ValueError("Report figure input differs from verified final snapshot")
+    frame = pd.read_parquet(io.BytesIO(payload))
     y, scores = frame.label.to_numpy(), frame[f"score_{seed}"].to_numpy()
     precision, recall, _ = precision_recall_curve(y, scores)
     figure, axes = plt.subplots(1, 2, figsize=(11, 4), layout="constrained")

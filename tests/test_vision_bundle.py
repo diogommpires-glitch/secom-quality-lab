@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from secom_quality.common import fingerprint, read_json, write_json
-from secom_quality.vision import bundle, models
+from secom_quality.vision import bundle, models, study
 
 
 @pytest.fixture
@@ -13,15 +13,49 @@ def built(tmp_path, monkeypatch):
     monkeypatch.setattr(bundle, "dependency_versions", lambda: {"test": "1"})
     monkeypatch.setattr(models, "load_predictor", lambda *a, **kw: SimpleNamespace(predict=None))
     research = tmp_path / "vision/research"
-    selection = {"config": {"config_id": "fixture"}, "seeds": [1], "protocol_hash": "fixture"}
+    config = {"config_id": "fixture"}
+    protocol = {"seeds": [1], "candidate_configs": [config]}
+    protocol["protocol_hash"] = fingerprint(protocol)
+    write_json(research / "protocol.json", protocol)
+    selection = {
+        "config": config,
+        "seeds": [1],
+        "serving_seed": 1,
+        "reference_configs": [],
+        "protocol_hash": protocol["protocol_hash"],
+    }
     selection["selection_hash"] = fingerprint(selection)
     write_json(research / "selection.json", selection)
-    write_json(research / "final/report.json", {"selection_hash": selection["selection_hash"]})
+    write_json(
+        research / "final/report.json",
+        {
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": protocol["protocol_hash"],
+            "model_id": "fixture",
+            "serving_seed": 1,
+        },
+    )
     model = research / "final/models/1"
-    write_json(model / "predictor.json", {"fixture": True})
+    write_json(
+        model / "predictor.json",
+        {
+            "config": config,
+            "training": {"seed": 1, "training_rows": 1, "training_record_ids": ["training-only"]},
+        },
+    )
     (model / "weights.safetensors").write_bytes(b"explicit synthetic tensor fixture")
     (model / "checkpoint.safetensors").write_bytes(b"not an inference artifact")
     write_json(model / "training_history.json", {"must_not_ship": True})
+    write_json(
+        research / "final-access.json",
+        {
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": protocol["protocol_hash"],
+            "access_recorded": True,
+            "model_files": study._final_model_files(research / "final"),
+        },
+    )
+    write_json(research / "final/checksums.json", study._file_hashes(research / "final"))
     bundle.build_bundle(tmp_path)
     return tmp_path / "vision/bundles/main"
 

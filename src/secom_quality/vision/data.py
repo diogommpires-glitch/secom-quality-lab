@@ -12,7 +12,6 @@ import stat
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,7 +19,8 @@ from PIL import Image
 from scipy.fft import dctn
 from sklearn.model_selection import StratifiedGroupKFold
 
-from ..common import fingerprint, read_json, sha256_file, utc_now, write_json
+from ..common import fingerprint, read_json, sha256_file, utc_now
+from ..common import immutable_json as immutable_json
 
 ARCHIVE_URL = "https://go.vicos.si/kolektorsdd2"
 ARCHIVE_SHA256 = "edcdb486809b24f1d17b785e30c52fafc5999554dd5fe18ddf77b61ceb6f36a8"
@@ -37,14 +37,6 @@ COLUMNS = ["record_id", "image_path", "mask_path", "label", "group_id", "fold"]
 
 def vision_root(root: Path) -> Path:
     return Path(root).resolve() / "vision"
-
-
-def immutable_json(path: Path, value: Any) -> None:
-    if path.exists():
-        if read_json(path) != value:
-            raise ValueError(f"Immutable artifact conflicts: {path.name}")
-        return
-    write_json(path, value)
 
 
 def safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:

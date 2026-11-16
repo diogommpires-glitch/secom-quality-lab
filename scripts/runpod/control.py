@@ -9,6 +9,7 @@ import math
 import os
 import re
 import subprocess
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -126,24 +127,41 @@ def create_resources(client, plan, public_key, state_path):
     if not public_key.startswith("ssh-ed25519 "):
         raise ValueError("Expected the dedicated SSH public key, never a private key")
     state_path = Path(state_path)
-    if state_path.exists():
-        raise ValueError(
-            "Provisioning state exists; inspect it rather than creating duplicate paid resources"
-        )
     state_path.parent.mkdir(parents=True, exist_ok=True)
 
     def save(state):
-        temporary = state_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(state, indent=2))
-        os.replace(temporary, state_path)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", dir=state_path.parent, delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                json.dump(state, stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, state_path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
-    save(
-        {
-            "created_unix": time.time(),
-            "plan": plan,
-            "state": "volume_creation_requested_inspect_before_retry",
-        }
-    )
+    # Exclusive durable intent is retained even if a mutation response is lost.
+    try:
+        with state_path.open("x", encoding="utf-8") as stream:
+            json.dump(
+                {
+                    "created_unix": time.time(),
+                    "plan": plan,
+                    "state": "volume_creation_requested_inspect_before_retry",
+                },
+                stream,
+                indent=2,
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        raise ValueError(
+            "Provisioning state exists; inspect it rather than creating duplicate paid resources"
+        ) from None
     volume = client.request(
         "POST",
         "/networkvolumes",

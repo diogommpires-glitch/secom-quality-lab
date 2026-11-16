@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from secom_quality.common import read_json, sha256_file, write_json
+from secom_quality.common import fingerprint, read_json, sha256_file, write_json
 from secom_quality.vision import models, study
 from secom_quality.vision.metrics import image_metrics, localization_metrics, paired_bootstrap
 
@@ -44,7 +44,14 @@ def fit_record(tmp_path):
     directory = tmp_path / "fold"
     directory.mkdir()
     prediction = directory / "predictions.parquet"
-    prediction.write_bytes(b"immutable-prediction-fixture")
+    frame = pd.DataFrame(
+        {
+            "record_id": [f"image-{i}" for i in range(10)],
+            "label": [1] + [0] * 9,
+            "risk_score": np.linspace(1, 0, 10),
+        }
+    )
+    frame.to_parquet(prediction, index=False)
     config = {"config_id": "fixed", "family": "resnet18_logistic"}
     protocol = {"protocol_hash": "protocol"}
     result = {
@@ -53,8 +60,11 @@ def fit_record(tmp_path):
         "seed": 7,
         "fold": 0,
         "status": "completed",
+        "result_schema": "vision-fit-v2",
+        "metrics": image_metrics(frame.label, frame.risk_score, frame.record_id),
         "files": {"predictions.parquet": sha256_file(prediction)},
     }
+    result["result_hash"] = fingerprint(result)
     write_json(directory / "result.json", result)
     return directory, protocol, config
 
@@ -76,8 +86,17 @@ def test_completed_fit_validates_binding_and_exact_files(tmp_path):
 def final_fixture(tmp_path, monkeypatch):
     research = tmp_path / "vision" / "research"
     research.mkdir(parents=True)
-    protocol = {"protocol_hash": "protocol"}
-    selection = {"selection_hash": "selection", "config": {"config_id": "fixed"}, "seeds": [7]}
+    protocol = {"seeds": [7], "candidate_configs": [{"config_id": "fixed"}]}
+    protocol["protocol_hash"] = fingerprint(protocol)
+    selection = {
+        "config": {"config_id": "fixed"},
+        "seeds": [7],
+        "serving_seed": 7,
+        "reference_configs": [],
+        "protocol_hash": protocol["protocol_hash"],
+    }
+    selection["selection_hash"] = fingerprint(selection)
+    write_json(research / "protocol.json", protocol)
     write_json(research / "selection.json", selection)
     monkeypatch.setattr(study, "checked_protocol", lambda root: protocol)
     monkeypatch.setattr(study, "freeze_selection", lambda root: selection)
@@ -98,14 +117,14 @@ def final_fixture(tmp_path, monkeypatch):
 
 
 def test_final_resume_refuses_changed_or_missing_models_before_label_access(tmp_path, monkeypatch):
-    research, _ = final_fixture(tmp_path, monkeypatch)
+    research, selection = final_fixture(tmp_path, monkeypatch)
     staging = research / "final.staging"
     model = staging / "models" / "7" / "weights.safetensors"
     model.parent.mkdir(parents=True)
     model.write_bytes(b"original")
     ledger = {
-        "selection_hash": "selection",
-        "protocol_hash": "protocol",
+        "selection_hash": selection["selection_hash"],
+        "protocol_hash": selection["protocol_hash"],
         "access_recorded": True,
         "model_files": {"models/7/weights.safetensors": sha256_file(model)},
     }
@@ -119,11 +138,20 @@ def test_final_resume_refuses_changed_or_missing_models_before_label_access(tmp_
 
 
 def test_cached_final_report_checksum_is_verified(tmp_path, monkeypatch):
-    research, _ = final_fixture(tmp_path, monkeypatch)
+    research, selection = final_fixture(tmp_path, monkeypatch)
     final = research / "final"
     final.mkdir()
+    write_json(
+        research / "final-access.json",
+        {
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": selection["protocol_hash"],
+            "access_recorded": True,
+            "model_files": {},
+        },
+    )
     report_path = final / "report.json"
-    write_json(report_path, {"selection_hash": "selection"})
+    write_json(report_path, {"selection_hash": selection["selection_hash"]})
     write_json(final / "checksums.json", {"report.json": sha256_file(report_path)})
     report_path.write_text("corrupt", encoding="utf-8")
     with pytest.raises(ValueError, match="checksum"):
@@ -186,7 +214,7 @@ def test_references_fit_before_access_and_are_immutable_after_access(tmp_path, m
 
 
 def test_cached_report_binds_reference_bytes_to_first_access_ledger(tmp_path, monkeypatch):
-    research, _ = final_fixture(tmp_path, monkeypatch)
+    research, selection = final_fixture(tmp_path, monkeypatch)
     final = research / "final"
     reference = final / "references" / "linear" / "weights.safetensors"
     selected = final / "models" / "7" / "weights.safetensors"
@@ -197,16 +225,121 @@ def test_cached_report_binds_reference_bytes_to_first_access_ledger(tmp_path, mo
     write_json(
         research / "final-access.json",
         {
-            "selection_hash": "selection",
-            "protocol_hash": "protocol",
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": selection["protocol_hash"],
+            "access_recorded": True,
             "model_files": study._final_model_files(final),
         },
     )
-    write_json(final / "report.json", {"selection_hash": "selection"})
+    write_json(
+        selected.with_name("predictor.json"),
+        {
+            "config": selection["config"],
+            "training": {"seed": 7, "training_rows": 1, "training_record_ids": ["train-a"]},
+        },
+    )
+    # The evaluated reference is ledger-bound even if it is not the serving model.
+    write_json(
+        research / "final-access.json",
+        {
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": selection["protocol_hash"],
+            "access_recorded": True,
+            "model_files": study._final_model_files(final),
+        },
+    )
+    write_json(
+        final / "report.json",
+        {
+            "selection_hash": selection["selection_hash"],
+            "protocol_hash": selection["protocol_hash"],
+            "model_id": "fixed",
+            "serving_seed": 7,
+        },
+    )
     write_json(final / "checksums.json", study._file_hashes(final))
-    assert study.evaluate_final(tmp_path)["selection_hash"] == "selection"
+    assert study.evaluate_final(tmp_path)["selection_hash"] == selection["selection_hash"]
     reference.write_bytes(b"changed reference")
     (final / "checksums.json").unlink()
     write_json(final / "checksums.json", study._file_hashes(final))
     with pytest.raises(ValueError, match="first-access ledger"):
         study.evaluate_final(tmp_path)
+
+
+def test_completed_fit_rejects_edited_metrics_even_if_they_are_resealed(tmp_path):
+    directory, protocol, config = fit_record(tmp_path)
+    path = directory / "result.json"
+    changed = read_json(path)
+    changed["metrics"]["primary"]["recall"] = 0.0
+    write_json(path, changed)
+    with pytest.raises(ValueError, match="result fingerprint"):
+        study._read_fit(directory, protocol, config, 7, 0)
+    changed["result_hash"] = fingerprint(
+        {key: value for key, value in changed.items() if key != "result_hash"}
+    )
+    write_json(path, changed)
+    with pytest.raises(ValueError, match="metrics differ from verified predictions"):
+        study._read_fit(directory, protocol, config, 7, 0)
+
+
+def test_legacy_fit_is_rejected_without_rewriting_its_bytes(tmp_path):
+    directory, protocol, config = fit_record(tmp_path)
+    path = directory / "result.json"
+    old = read_json(path)
+    old.pop("result_hash")
+    old.pop("result_schema")
+    write_json(path, old)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="Unsealed legacy"):
+        study._read_fit(directory, protocol, config, 7, 0)
+    assert path.read_bytes() == before
+
+
+def test_frozen_legacy_fit_reads_without_resealing_and_rejects_changed_timing(tmp_path):
+    import shutil
+
+    old, protocol, config = fit_record(tmp_path)
+    research = tmp_path / "workspace/vision/research"
+    destination = research / "experiments/fixed/7/fold-0"
+    shutil.copytree(old, destination)
+    path = destination / "result.json"
+    result = read_json(path)
+    result.pop("result_schema")
+    result.pop("result_hash")
+    result["inference_seconds"] = 1.25
+    write_json(path, result)
+    development = {
+        "protocol_hash": protocol["protocol_hash"],
+        "initial": [{"results": [result]}],
+        "finalists": [],
+    }
+    write_json(research / "development.json", development)
+    selection = {
+        "protocol_hash": protocol["protocol_hash"],
+        "development_hash": sha256_file(research / "development.json"),
+    }
+    selection["selection_hash"] = fingerprint(selection)
+    write_json(research / "selection.json", selection)
+    before = path.read_bytes()
+    assert study._read_fit(destination, protocol, config, 7, 0) == result
+    assert path.read_bytes() == before
+    result["inference_seconds"] = 0.01
+    write_json(path, result)
+    with pytest.raises(ValueError, match="metadata differs from its frozen development record"):
+        study._read_fit(destination, protocol, config, 7, 0)
+
+
+def test_fit_metrics_consume_the_verified_prediction_byte_snapshot(tmp_path, monkeypatch):
+    directory, protocol, config = fit_record(tmp_path)
+    verify = study._verify_files
+
+    def changed_after_verification(path, expected, **kwargs):
+        verify(path, expected, **kwargs)
+        predictions = path / "predictions.parquet"
+        frame = pd.read_parquet(predictions)
+        frame["record_id"] = [f"changed-{i}" for i in range(len(frame))]
+        frame.to_parquet(predictions, index=False)
+
+    monkeypatch.setattr(study, "_verify_files", changed_after_verification)
+    with pytest.raises(ValueError, match="predictions differ from verified checksum snapshot"):
+        study._read_fit(directory, protocol, config, 7, 0)

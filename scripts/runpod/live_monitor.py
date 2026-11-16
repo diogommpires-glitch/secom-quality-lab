@@ -5,8 +5,14 @@ import json
 import math
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.runpod.process_identity import coordinator as owned_coordinator
+from scripts.runpod.process_identity import option, workspace_matches
 
 
 def read_json(path):
@@ -31,7 +37,11 @@ def process(pid, proc=Path("/proc"), ticks=100):
     directory = proc / str(pid)
     try:
         fields = (directory / "stat").read_text().rpartition(") ")[2].split()
-        command = (directory / "cmdline").read_bytes().decode(errors="replace").split("\0")
+        command = [
+            part
+            for part in (directory / "cmdline").read_bytes().decode(errors="replace").split("\0")
+            if part
+        ]
         counters = dict(line.split(":", 1) for line in (directory / "io").read_text().splitlines())
         memory = next(
             (
@@ -61,7 +71,8 @@ def is_study_process(record, worker):
     return bool(
         record
         and any(Path(part).name == "parallel_study.py" for part in record["command"])
-        and ("--worker" in record["command"]) == worker
+        and any(part == "--worker" or part.startswith("--worker=") for part in record["command"])
+        == worker
     )
 
 
@@ -94,7 +105,7 @@ def fit_counts(root, protocol):
 def task_identity(record, runtime):
     try:
         command = record["command"]
-        request = Path(command[command.index("--worker") + 1]).resolve()
+        request = Path(option(command, "--worker")).resolve()
         if not request.is_relative_to(runtime.resolve()):
             return None
         task = read_json(request)
@@ -131,7 +142,12 @@ def training_progress(root, task):
 
 
 def observed_deltas(item, old, elapsed):
-    if old and elapsed > 0 and old["start_ticks"] == item["start_ticks"]:
+    if (
+        old
+        and elapsed > 0
+        and old["pid"] == item["pid"]
+        and old["start_ticks"] == item["start_ticks"]
+    ):
         for counter in ("cpu_seconds", "rchar", "wchar"):
             item[counter + "_delta"] = max(0, item[counter] - old[counter])
         item["cpu_percent_one_core"] = item["cpu_seconds_delta"] / elapsed * 100
@@ -270,11 +286,11 @@ def snapshot(root, previous=None, *, now=None, proc=Path("/proc"), gpu=None, tic
     now = time.time() if now is None else now
     runtime = root / "vision/runtime/runpod"
     status, guard = read_json(runtime / "status.json"), read_json(runtime / "watchdog.json")
-    try:
-        coordinator = process(int((runtime / "job.pid").read_text()), proc, ticks)
-    except (OSError, ValueError):
-        coordinator = None
-    if not is_study_process(coordinator, False) or coordinator["state"] == "Z":
+    identity = owned_coordinator(root, proc)
+    coordinator = process(identity["pid"], proc, ticks) if identity else None
+    if coordinator and any(
+        coordinator[key] != identity[key] for key in ("pid", "start_ticks", "command")
+    ):
         coordinator = None
     workers = []
     elapsed = now - previous["sample_unix"] if previous else 0
@@ -284,7 +300,13 @@ def snapshot(root, previous=None, *, now=None, proc=Path("/proc"), gpu=None, tic
             if not directory.name.isdigit():
                 continue
             item = process(int(directory.name), proc, ticks)
-            if not item or item["parent"] != coordinator["pid"] or not is_study_process(item, True):
+            if (
+                not item
+                or item["state"] in {"Z", "X"}
+                or item["parent"] != coordinator["pid"]
+                or not is_study_process(item, True)
+                or not workspace_matches(item, root)
+            ):
                 continue
             item["task"] = task_identity(item, runtime)
             item["training"] = training_progress(root, item["task"])
@@ -294,6 +316,10 @@ def snapshot(root, previous=None, *, now=None, proc=Path("/proc"), gpu=None, tic
             workers.append(item)
     benchmark = operational_benchmark(root, coordinator, proc, ticks)
     actors = list(workers)
+    if coordinator:
+        old = previous.get("coordinator") if previous else None
+        observed_deltas(coordinator, old, elapsed)
+        actors.append(coordinator)
     if benchmark and benchmark.get("pilot"):
         old = (previous.get("operational_benchmark") or {}).get("pilot") if previous else None
         observed_deltas(benchmark["pilot"], old, elapsed)
@@ -325,6 +351,7 @@ def snapshot(root, previous=None, *, now=None, proc=Path("/proc"), gpu=None, tic
         "phase": status.get("phase"),
         "coordinator_alive": bool(coordinator),
         "coordinator_state": coordinator["state"] if coordinator else None,
+        "coordinator": coordinator,
         "activity": activity,
         "activity_note": "Zero GPU utilization alone does not establish a stall.",
         "workers": workers,

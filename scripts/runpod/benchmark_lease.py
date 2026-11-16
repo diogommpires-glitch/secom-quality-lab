@@ -16,6 +16,10 @@ import time
 import uuid
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.runpod.process_identity import option, workspace_matches
+
 PROC = Path("/proc")
 TERMINAL = {"completed", "deferred", "failed", "cancelled", "recovered"}
 TAG = "SECOM_BENCHMARK_LEASE_ID"
@@ -172,14 +176,6 @@ def children(identity):
     return result
 
 
-def workspace_matches(current, root):
-    try:
-        args = current["command"]
-        return Path(args[args.index("--workspace") + 1]).resolve() == root.resolve()
-    except (ValueError, IndexError, TypeError):
-        return False
-
-
 def guard_check(root, expected=None, reserve=0, *, for_resume=False):
     r = runtime(root)
     if (r.parent / "STOP_REQUESTED").exists():
@@ -200,6 +196,8 @@ def guard_check(root, expected=None, reserve=0, *, for_resume=False):
             key: guard[key]
             for key in ("started_unix", "hourly_usd", "budget_usd", "max_hours", "pod_id")
         }
+        if fixed["pod_id"] != emergency_guard_identity().get("pod_id"):
+            raise ValueError("Guard does not cover the provider-supplied current Pod")
         values = [
             float(fixed[key]) for key in ("started_unix", "hourly_usd", "budget_usd", "max_hours")
         ]
@@ -216,6 +214,7 @@ def guard_check(root, expected=None, reserve=0, *, for_resume=False):
             guard["state"] != "monitoring"
             or not 0 <= age <= 45
             or not command_is(gp, "watchdog.py")
+            or not matches(guard["identity"], gp)
             or not workspace_matches(gp, root)
             or gp["state"] in {"Z", "T", "t"}
         ):
@@ -236,7 +235,7 @@ def guard_check(root, expected=None, reserve=0, *, for_resume=False):
 def completed_worker(root, identity):
     args = identity["command"]
     try:
-        request = Path(args[args.index("--worker") + 1]).resolve()
+        request = Path(option(args, "--worker")).resolve()
         if not request.is_relative_to(runtime(root).resolve()):
             raise ValueError("Task request escapes the approved runtime")
         task = read_json(request)
@@ -417,6 +416,8 @@ def initial_stop_guard(root):
         required = ("started_unix", "hourly_usd", "budget_usd", "max_hours")
         if not isinstance(guard, dict) or not valid_pod_id(guard.get("pod_id")):
             raise ValueError("No usable guard object")
+        if guard["pod_id"] != emergency_guard_identity().get("pod_id"):
+            raise ValueError("Guard does not cover the provider-supplied current Pod")
         values = [float(guard[key]) for key in required]
         if not all(math.isfinite(value) for value in values):
             raise ValueError("Nonfinite guard values")
@@ -464,6 +465,7 @@ def financial_stop(root, record, reason):
         latest = read_json(r / "watchdog.json")
         healthy = (
             published
+            and captured.get("pod_id") == emergency_guard_identity().get("pod_id")
             and not captured.get("emergency_identity_only", False)
             and all(
                 key in captured
@@ -471,6 +473,7 @@ def financial_stop(root, record, reason):
             )
             and isinstance(latest, dict)
             and command_is(current, "watchdog.py")
+            and matches(latest["identity"], current)
             and workspace_matches(current, root)
             and current["state"] not in {"Z", "T", "t"}
             and latest.get("state") == "monitoring"
@@ -488,9 +491,7 @@ def financial_stop(root, record, reason):
         spec = importlib.util.spec_from_file_location("lease_watchdog", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        pod_id = captured.get("pod_id")
-        if not valid_pod_id(pod_id):
-            pod_id = emergency_guard_identity().get("pod_id")
+        pod_id = emergency_guard_identity().get("pod_id")
         if not valid_pod_id(pod_id):
             raise LeaseError("No trusted current Pod identity is available for the stop request")
         module.stop_compute(pod_id)
@@ -619,7 +620,10 @@ def run_lease(root, future_models, output, wait_seconds=900, max_seconds=3600, e
         if (
             not command_is(coordinator, "parallel_study.py")
             or not workspace_matches(coordinator, root)
-            or "--worker" in coordinator["command"]
+            or any(
+                part == "--worker" or part.startswith("--worker=")
+                for part in coordinator["command"]
+            )
             or coordinator["state"] in {"Z", "T", "t"}
         ):
             raise LeaseError("Primary coordinator is not an active, independently running process")

@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytest.importorskip("torch")
+
 SPEC = importlib.util.spec_from_file_location(
     "runpod_steady_pilot", Path(__file__).parents[1] / "scripts/runpod/steady_pilot.py"
 )
@@ -91,9 +93,7 @@ def test_real_fold_training_rows_and_complete_elapsed_estimate(tmp_path, fake_ru
     assert json.loads((tmp_path / "vision/runtime/runpod/steady-pilot.json").read_text()) == report
 
 
-def test_cuda_context_is_initialized_before_peak_memory_reset(
-    tmp_path, fake_runtime, monkeypatch
-):
+def test_cuda_context_is_initialized_before_peak_memory_reset(tmp_path, fake_runtime, monkeypatch):
     initialized = False
     events = []
 

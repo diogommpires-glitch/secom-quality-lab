@@ -3,6 +3,9 @@
 import hashlib
 import json
 import os
+import tempfile
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -41,12 +44,47 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@contextmanager
+def staged_json(path: Path, value: Any):
+    """Stage complete bytes beside the destination before either publication contract."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(canonical_json(value) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        yield temporary
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def write_json(path: Path, value: Any) -> None:
     """Atomically replace mutable metadata; callers enforce immutable-run policy."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(canonical_json(value) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    with staged_json(path, value) as temporary:
+        for attempt in range(16):
+            try:
+                os.replace(temporary, path)
+                return
+            except PermissionError as error:
+                if getattr(error, "winerror", None) not in {5, 32} or attempt == 15:
+                    raise
+                time.sleep(0.05)
+
+
+def immutable_json(path: Path, value: Any) -> None:
+    """A changed scientific record requires a new workspace, never an overwrite."""
+    if path.exists():
+        if fingerprint(read_json(path)) != fingerprint(value):
+            raise ValueError(f"Immutable record differs: {path}; use a new workspace")
+        return
+    with staged_json(path, value) as temporary:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if fingerprint(read_json(path)) != fingerprint(value):
+                raise ValueError(f"Immutable record differs: {path}; use a new workspace") from None
 
 
 def utc_now() -> str:

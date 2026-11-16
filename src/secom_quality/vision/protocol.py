@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..common import fingerprint, read_json, sha256_file
 from .data import SEED, audit_data, immutable_json, vision_root
+from .metrics import PRO_METRIC_REVISION
 
 RESOLUTIONS = ([704, 256], [1056, 384])  # tensor height,width; portrait production items
 SEEDS = [SEED + offset for offset in range(5)]
@@ -132,6 +133,7 @@ def freeze_protocol(root: Path) -> dict:
         "test_policy": "Freeze selection,training,preprocessing,dependencies and serving seed before durable final-access record; five frozen models evaluated once; no test-based reselection.",
         "serving_seed": SEED,
         "calibration_status": "not_validated",
+        "localisation_metric_revision": PRO_METRIC_REVISION,
         "uncertainty": {
             "replicates": 2000,
             "paired": True,

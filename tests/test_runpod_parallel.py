@@ -124,6 +124,9 @@ def test_primary_completion_is_not_a_terminal_watchdog_signal(tmp_path, monkeypa
             snapshots.append(dict(value))
 
     monkeypatch.setattr(module, "write_json", record)
+    monkeypatch.setattr(
+        module, "process", lambda pid: {"pid": pid, "start_ticks": 123, "command": ["synthetic"]}
+    )
     old_threads = torch.get_num_threads()
     try:
         module.run(tmp_path, ["0", "1"])
@@ -135,3 +138,19 @@ def test_primary_completion_is_not_a_terminal_watchdog_signal(tmp_path, monkeypa
     assert len(terminal) == 1 and terminal[0]["phase"] == "research"
     assert read_json(tmp_path / "vision/runtime/runpod/status.json")["state"] == "completed"
     assert (tmp_path / "vision/runtime/runpod/job.pid").read_text().strip().isdigit()
+
+
+def test_duplicate_coordinator_cannot_replace_owner_markers(tmp_path):
+    runtime = tmp_path / "vision/runtime/runpod"
+    runtime.mkdir(parents=True)
+    marker = runtime / "job.pid"
+    identity = runtime / "job-identity.json"
+    marker.write_text("123-original-owner")
+    identity.write_text("original-creation-identity")
+    with (
+        module.exclusive(runtime.parent / "runpod-coordinator.lock"),
+        pytest.raises((ValueError, OSError)),
+    ):
+        module.run(tmp_path, ["0"])
+    assert marker.read_text() == "123-original-owner"
+    assert identity.read_text() == "original-creation-identity"

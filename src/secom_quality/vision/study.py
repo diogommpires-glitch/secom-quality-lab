@@ -1,6 +1,9 @@
 """Resumable vision experiments with a separate, immutable final-access ledger."""
 
 import gc
+import hashlib
+import io
+import json
 import traceback
 import uuid
 from contextlib import contextmanager
@@ -8,6 +11,7 @@ from pathlib import Path
 from time import perf_counter
 
 import numpy as np
+import pandas as pd
 from PIL import Image
 from threadpoolctl import threadpool_limits
 
@@ -79,8 +83,50 @@ def _verify_files(directory, expected, *, excluded=()):
             raise ValueError("Completed artifact checksum mismatch")
 
 
+def _verify_legacy_fit(destination, result, protocol):
+    """Legacy metadata needs the pre-existing frozen development/selection anchor."""
+    destination = Path(destination).resolve()
+    if len(destination.parents) < 4 or destination.parents[2].name != "experiments":
+        raise ValueError("Unsealed legacy experiment requires its frozen development selection")
+    research = destination.parents[3]
+    try:
+        selection = read_json(research / "selection.json")
+        development = read_json(research / "development.json")
+    except OSError as exc:
+        raise ValueError(
+            "Unsealed legacy experiment requires its frozen development selection"
+        ) from exc
+    if (
+        selection.get("selection_hash")
+        != fingerprint({key: value for key, value in selection.items() if key != "selection_hash"})
+        or selection.get("protocol_hash") != protocol["protocol_hash"]
+        or development.get("protocol_hash") != protocol["protocol_hash"]
+        or selection.get("development_hash") != sha256_file(research / "development.json")
+    ):
+        raise ValueError("Legacy experiment development/selection anchor differs")
+    matches = [
+        saved
+        for row in [*development["initial"], *development["finalists"]]
+        for saved in row["results"]
+        if (saved.get("config"), saved.get("seed"), saved.get("fold"))
+        == (result.get("config"), result.get("seed"), result.get("fold"))
+    ]
+    if not matches or any(saved != result for saved in matches):
+        raise ValueError("Legacy experiment metadata differs from its frozen development record")
+
+
 def _read_fit(destination, protocol, config, seed, fold):
     result = read_json(Path(destination) / "result.json")
+    if "result_schema" not in result and "result_hash" not in result:
+        _verify_legacy_fit(destination, result, protocol)
+    else:
+        if result.get("result_schema") != "vision-fit-v2":
+            raise ValueError("Unsupported completed experiment result schema")
+        expected_hash = fingerprint(
+            {key: value for key, value in result.items() if key != "result_hash"}
+        )
+        if result.get("result_hash") != expected_hash:
+            raise ValueError("Completed experiment result fingerprint mismatch")
     if (
         result.get("protocol_hash") != protocol["protocol_hash"]
         or result.get("config") != config
@@ -91,6 +137,22 @@ def _read_fit(destination, protocol, config, seed, fold):
             "Completed experiment does not match frozen protocol/configuration/seed/fold"
         )
     _verify_files(destination, result.get("files", {}), excluded=("result.json",))
+    if result.get("status") == "completed":
+        if "predictions.parquet" not in result["files"]:
+            raise ValueError("Completed experiment has no hash-bound predictions")
+        payload = (Path(destination) / "predictions.parquet").read_bytes()
+        if hashlib.sha256(payload).hexdigest() != result["files"]["predictions.parquet"]:
+            raise ValueError(
+                "Completed experiment predictions differ from verified checksum snapshot"
+            )
+        predictions = pd.read_parquet(io.BytesIO(payload))
+        if not {"label", "risk_score", "record_id"} <= set(predictions.columns):
+            raise ValueError("Completed experiment prediction schema differs")
+        actual_metrics = image_metrics(
+            predictions.label, predictions.risk_score, predictions.record_id
+        )
+        if result.get("metrics") != actual_metrics:
+            raise ValueError("Completed experiment metrics differ from verified predictions")
     return result
 
 
@@ -134,6 +196,7 @@ def run_fit(root, config, seed, fold, device="cuda"):
     staging.mkdir(parents=True, exist_ok=True)
     write_json(request_path, request)
     result = {
+        "result_schema": "vision-fit-v2",
         "config": config,
         "seed": seed,
         "fold": fold,
@@ -173,6 +236,7 @@ def run_fit(root, config, seed, fold, device="cuda"):
     result["files"] = {
         p.relative_to(staging).as_posix(): sha256_file(p) for p in staging.rglob("*") if p.is_file()
     }
+    result["result_hash"] = fingerprint(result)
     write_json(staging / "result.json", result)
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging.rename(destination)
@@ -346,6 +410,96 @@ def _final_fit_requests(selection):
     return requests
 
 
+def _verified_json(path, expected_sha256):
+    payload = Path(path).read_bytes()
+    if hashlib.sha256(payload).hexdigest() != expected_sha256:
+        raise ValueError("Final metadata differs from its verified checksum snapshot")
+    return json.loads(payload)
+
+
+def verified_final_artifacts(root):
+    """Snapshot verified metadata and first-access pins without fitting or rewriting."""
+    research = _research(root)
+    target = research / "final"
+    if (
+        target.is_symlink()
+        or target.is_junction()
+        or not target.resolve().is_relative_to(research.resolve())
+    ):
+        raise ValueError("Final artifacts must remain in their research workspace")
+    try:
+        selection = read_json(research / "selection.json")
+        protocol = read_json(research / "protocol.json")
+        ledger = read_json(research / "final-access.json")
+        checksums = read_json(target / "checksums.json")
+    except OSError as exc:
+        raise ValueError(
+            "Final publication requires readable frozen selection, protocol, report, access ledger and checksums"
+        ) from exc
+    _verify_files(target, checksums, excluded=("checksums.json",))
+    report = _verified_json(target / "report.json", checksums["report.json"])
+    for value, key in ((selection, "selection_hash"), (protocol, "protocol_hash")):
+        if value.get(key) != fingerprint(
+            {name: item for name, item in value.items() if name != key}
+        ):
+            raise ValueError(f"Frozen final {key} fingerprint mismatch")
+    if (
+        selection["protocol_hash"] != protocol["protocol_hash"]
+        or report.get("selection_hash") != selection["selection_hash"]
+        or report.get("protocol_hash") != protocol["protocol_hash"]
+        or ledger.get("selection_hash") != selection["selection_hash"]
+        or ledger.get("protocol_hash") != protocol["protocol_hash"]
+        or not ledger.get("access_recorded")
+        or selection["seeds"] != protocol["seeds"]
+        or selection["serving_seed"] != selection["seeds"][0]
+        or report.get("serving_seed") != selection["serving_seed"]
+        or report.get("model_id") != selection["config"]["config_id"]
+    ):
+        raise ValueError("Final report/access ledger differs from the frozen selection/protocol")
+    actual_models = _final_model_files(target)
+    if not ledger.get("model_files") or ledger["model_files"] != actual_models:
+        raise ValueError("Final frozen model bytes differ from first-access ledger")
+    training_ids = None
+    for config, seed, relative in _final_fit_requests(selection):
+        directory = target / relative
+        key = (relative / "predictor.json").as_posix()
+        required = [key, (relative / "weights.safetensors").as_posix()]
+        if config.get("family") == "patchcore":
+            required.append((relative / "memory.safetensors").as_posix())
+        if any(name not in actual_models for name in required):
+            raise ValueError("Final first-access ledger is missing required predictor members")
+        metadata = _verified_json(directory / "predictor.json", actual_models[key])
+        training = metadata.get("training", {})
+        ids = training.get("training_record_ids")
+        if (
+            config not in protocol["candidate_configs"]
+            or metadata.get("config") != config
+            or training.get("seed") != seed
+            or not isinstance(ids, list)
+            or not ids
+            or any(not isinstance(identity, str) for identity in ids)
+            or len(set(ids)) != len(ids)
+            or training.get("training_rows") != len(ids)
+            or (training_ids is not None and ids != training_ids)
+        ):
+            raise ValueError(
+                "Final predictor metadata differs from its frozen full-training configuration/seed"
+            )
+        training_ids = ids
+    return {
+        "selection": selection,
+        "protocol": protocol,
+        "report": report,
+        "model_files": actual_models,
+        "checksums": checksums,
+    }
+
+
+def verify_final(root):
+    """Return the read-only verified final report, without starting missing work."""
+    return verified_final_artifacts(root)["report"]
+
+
 def evaluate_final(root, device="cuda"):
     from .models import fit_model, load_predictor
 
@@ -358,23 +512,7 @@ def evaluate_final(root, device="cuda"):
     with exclusive(research / "final.lock"):
         target = research / "final"
         if (target / "report.json").exists():
-            checksums = read_json(target / "checksums.json")
-            _verify_files(target, checksums, excluded=("checksums.json",))
-            report = read_json(target / "report.json")
-            ledger = read_json(research / "final-access.json")
-            if (
-                report["selection_hash"] != selection["selection_hash"]
-                or ledger.get("selection_hash") != selection["selection_hash"]
-                or ledger.get("protocol_hash") != protocol["protocol_hash"]
-            ):
-                raise ValueError(
-                    "Final test has already been exposed to another selection/protocol"
-                )
-            expected_models = ledger.get("model_files")
-            actual_models = _final_model_files(target)
-            if not expected_models or expected_models != actual_models:
-                raise ValueError("Final frozen model bytes differ from first-access ledger")
-            return report
+            return verify_final(root)
         staging = target.with_name("final.staging")
         staging.mkdir(parents=True, exist_ok=True)
         train = load_development(root)

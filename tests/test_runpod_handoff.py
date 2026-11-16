@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import sys
+import threading
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -71,6 +72,69 @@ class FakeClient:
         return {}
 
 
+def test_simultaneous_provisioning_has_one_durable_owner_before_provider_mutation(tmp_path):
+    entered, release = threading.Event(), threading.Event()
+    state = tmp_path / "provision.json"
+    client = FakeClient()
+    request = client.request
+
+    def blocked_request(method, route, payload=None):
+        if route == "/networkvolumes":
+            assert (
+                json.loads(state.read_text())["state"]
+                == "volume_creation_requested_inspect_before_retry"
+            )
+            entered.set()
+            assert release.wait(5)
+        return request(method, route, payload)
+
+    client.request = blocked_request
+    outcomes = []
+
+    def provision():
+        try:
+            outcomes.append(
+                control.create_resources(client, plan(), "ssh-ed25519 synthetic", state)
+            )
+        except Exception as exc:
+            outcomes.append(exc)
+
+    thread = threading.Thread(target=provision)
+    thread.start()
+    try:
+        assert entered.wait(5)
+        with pytest.raises(ValueError, match="state exists"):
+            control.create_resources(client, plan(), "ssh-ed25519 synthetic", state)
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert len(outcomes) == 1 and isinstance(outcomes[0], dict)
+    assert [route for _, route, _ in client.calls] == ["/networkvolumes", "/pods"]
+    assert json.loads(state.read_text())["pod_id"] == "pod123"
+
+
+def test_unknown_provision_response_preserves_claim_and_prevents_retry(tmp_path):
+    state = tmp_path / "provision.json"
+
+    class LostResponse:
+        calls = 0
+
+        def request(self, *_args):
+            self.calls += 1
+            raise TimeoutError("Synthetic response lost after provider mutation")
+
+    client = LostResponse()
+    with pytest.raises(TimeoutError):
+        control.create_resources(client, plan(), "ssh-ed25519 synthetic", state)
+    with pytest.raises(ValueError, match="state exists"):
+        control.create_resources(client, plan(), "ssh-ed25519 synthetic", state)
+    assert client.calls == 1
+    assert (
+        json.loads(state.read_text())["state"] == "volume_creation_requested_inspect_before_retry"
+    )
+
+
 def test_api_key_is_authorization_header_never_url_or_error_body():
     captured = []
 
@@ -99,13 +163,15 @@ def test_api_key_is_authorization_header_never_url_or_error_body():
     assert "HTTP 401" in str(error.value)
 
 
-def test_dry_run_does_not_load_key_or_construct_client(monkeypatch, capsys):
+def test_dry_run_does_not_load_key_or_construct_client(tmp_path, monkeypatch, capsys):
     def forbidden(*args, **kwargs):
         raise AssertionError("A dry run contacted cloud or loaded credentials")
 
     monkeypatch.setattr(control, "Client", forbidden)
     monkeypatch.setattr(control, "load_key", forbidden)
-    monkeypatch.setattr(sys, "argv", ["control.py", "provision"])
+    plan_path = tmp_path / "synthetic-plan.json"
+    plan_path.write_text(json.dumps(plan()), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["control.py", "provision", "--plan", str(plan_path)])
     control.main()
     assert "DRY RUN" in capsys.readouterr().out
 

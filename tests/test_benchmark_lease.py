@@ -45,6 +45,7 @@ def set_state(proc, pid, state):
 def world(tmp_path, monkeypatch):
     for name, number in [("SIGSTOP", 19), ("SIGCONT", 18), ("SIGKILL", 9)]:
         monkeypatch.setattr(signal, name, getattr(signal, name, number), raising=False)
+    monkeypatch.setenv("RUNPOD_POD_ID", "ourpod")
     root, proc = tmp_path / "study", tmp_path / "proc"
     proc.mkdir()
     monkeypatch.setattr(lease, "PROC", proc)
@@ -64,11 +65,12 @@ def world(tmp_path, monkeypatch):
     (r / "watchdog.pid").write_text("60")
     (r / "job.pid").write_text("20")
     lease.atomic_json(r / "status.json", {"state": "running", "phase": "initial_matrix"})
-    fake_process(
+    guard["identity"] = fake_process(
         proc,
         60,
         command=["python3", "/project/scripts/runpod/watchdog.py", "--workspace", str(root)],
     )
+    lease.atomic_json(r / "watchdog.json", guard)
     coordinator = fake_process(
         proc,
         20,
@@ -683,3 +685,14 @@ def test_nonobject_stop_guard_cannot_be_trusted_as_a_financial_record(world, mon
     lease.financial_stop(world.root, {"guard": []}, "Captured guard object is invalid")
     assert stops == ["trusted-current-pod"]
     assert lease.read_json(world.runtime / "status.json")["state"] == "failed"
+
+
+def test_valid_stale_guard_cannot_route_stop_to_a_different_pod(world, monkeypatch):
+    monkeypatch.setenv("RUNPOD_POD_ID", "actual-current-pod")
+    stops = stub_pod_stop(monkeypatch)
+    captured = lease.initial_stop_guard(world.root)
+    assert captured == {"pod_id": "actual-current-pod", "emergency_identity_only": True}
+    with pytest.raises(lease.FinancialStop, match="current Pod"):
+        lease.guard_check(world.root)
+    lease.financial_stop(world.root, {"guard": world.guard}, "Stale Pod binding")
+    assert stops == ["actual-current-pod"]

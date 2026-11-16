@@ -1,5 +1,10 @@
 """HTTP workflows exercise the same core used by CLI and monitoring."""
 
+import asyncio
+import threading
+from dataclasses import replace
+
+import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
@@ -74,6 +79,46 @@ def test_api_upload_retry_export_and_protected_rows(client):
     protected = http.post("/api/v1/predictions", json=json_record("final-1"))
     assert protected.status_code == 403
     assert protected.json()["detail"]["code"] == "protected_test_record"
+
+
+def test_batch_keeps_liveness_responsive_until_scoring_finishes(tmp_path):
+    started, release = threading.Event(), threading.Event()
+    main = make_bundle(tmp_path)
+
+    class WaitingPredictor:
+        classes_ = np.array([0, 1])
+
+        def predict_proba(self, values):
+            started.set()
+            release.wait(timeout=2)
+            return np.tile([0.5, 0.5], (len(values), 1))
+
+    main = replace(main, predictor=WaitingPredictor())
+    app = create_app(tmp_path)
+    app.state.bundle = main
+    content = records_csv([record_from_values("synthetic", np.zeros(590))])
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http:
+            scoring = asyncio.create_task(
+                http.post(
+                    "/api/v1/batches",
+                    data={"client_request_id": "liveness"},
+                    files={"file": ("records.csv", content, "text/csv")},
+                )
+            )
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                assert (await http.get("/health/live")).status_code == 200
+                assert not scoring.done(), "Liveness was blocked until scoring finished"
+            finally:
+                release.set()
+                response = await scoring
+            assert response.status_code == 200
+
+    asyncio.run(exercise())
 
 
 def test_api_errors_and_demo_download_are_explicit(client):

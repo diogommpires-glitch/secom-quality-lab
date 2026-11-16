@@ -9,6 +9,7 @@ import stat
 import uuid
 import warnings
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -104,7 +105,7 @@ def parse_upload(content: bytes, filename: str) -> list[tuple[str, Any]]:
                     files.append((member.filename, archive.read(member)))
         except ApplicationError:
             raise
-        except (zipfile.BadZipFile, RuntimeError, NotImplementedError, OSError) as exc:
+        except (zipfile.BadZipFile, zlib.error, RuntimeError, NotImplementedError, OSError) as exc:
             raise ApplicationError(
                 "archive_decode", "The ZIP archive cannot be read safely."
             ) from exc

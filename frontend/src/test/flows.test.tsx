@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, request } from '../api';
@@ -60,6 +60,40 @@ describe('API failures', () => {
 });
 
 describe('Inspection workflow', () => {
+  it.each(['resolve', 'reject'])(
+    'keeps the latest preview when an earlier read finishes with %s',
+    async (outcome) => {
+      fetchMock.mockImplementation(() => response({ batches: [] }));
+      let finishOld!: (value: string) => void;
+      let failOld!: (reason: Error) => void;
+      const oldFile = new File(['old'], 'old.csv', { type: 'text/csv' });
+      const latestFile = new File(['latest'], 'latest.csv', { type: 'text/csv' });
+      Object.defineProperty(oldFile, 'text', {
+        value: () =>
+          new Promise<string>((resolve, reject) => {
+            finishOld = resolve;
+            failOld = reject;
+          }),
+      });
+      Object.defineProperty(latestFile, 'text', {
+        value: async () => 'latest_header\nlatest_value',
+      });
+      render(<Inspection />);
+      const picker = screen.getByLabelText('Choose CSV file');
+      fireEvent.change(picker, { target: { files: [oldFile] } });
+      fireEvent.change(picker, { target: { files: [latestFile] } });
+      expect(await screen.findByText('latest_header')).toBeInTheDocument();
+      await act(async () => {
+        if (outcome === 'resolve') finishOld('old_header\nold_value');
+        else failOld(new Error('Earlier file cannot be read'));
+      });
+      expect(screen.getByText('latest.csv')).toBeInTheDocument();
+      expect(screen.getByText('latest_header')).toBeInTheDocument();
+      expect(screen.queryByText('old_header')).not.toBeInTheDocument();
+      expect(screen.queryByText('The selected file could not be read.')).not.toBeInTheDocument();
+    },
+  );
+
   it('surfaces validation failure without creating a queue', async () => {
     fetchMock.mockImplementation((url, init) =>
       String(url).endsWith('/batches') && init?.method === 'POST'

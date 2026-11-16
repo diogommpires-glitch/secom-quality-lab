@@ -51,10 +51,12 @@ export default function Inspection() {
     setError('');
     setIssues([]);
     setPreview([]);
-    requestId.current = crypto.randomUUID();
+    const selectionId = crypto.randomUUID();
+    requestId.current = selectionId;
     if (next) {
       try {
         const text = await next.text();
+        if (requestId.current !== selectionId) return;
         setPreview(
           text
             .trim()
@@ -63,7 +65,7 @@ export default function Inspection() {
             .map((line) => line.split(',').slice(0, 7)),
         );
       } catch {
-        setError('The selected file could not be read.');
+        if (requestId.current === selectionId) setError('The selected file could not be read.');
       }
     }
   }

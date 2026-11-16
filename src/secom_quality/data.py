@@ -7,22 +7,14 @@ from zipfile import ZipFile
 import numpy as np
 import pandas as pd
 
-from .common import fingerprint, measurement_fingerprint, read_json, sha256_file, write_json
+from .common import immutable_json as immutable_json
+from .common import measurement_fingerprint, sha256_file
 from .contracts import ARCHIVE_SHA256, ARCHIVE_URL, DEVELOPMENT_END, FOLDS, Dataset
 
 FILE_HASHES = {
     "secom.data": "20f0e7ee434f7dcbae0eea9ffff009a2b57f42d6b0dc9a5bd4f00782c0a3374c",
     "secom_labels.data": "126884cf453705c9e61a903fe906f0665a3b45ce3639e621edc5c93c89627e03",
 }
-
-
-def immutable_json(path: Path, value: dict) -> None:
-    """A changed scientific record requires a new workspace, never an overwrite."""
-    if path.exists():
-        if fingerprint(read_json(path)) != fingerprint(value):
-            raise ValueError(f"Immutable record differs: {path}; use a new workspace")
-        return
-    write_json(path, value)
 
 
 def fetch_data(root: Path) -> dict:

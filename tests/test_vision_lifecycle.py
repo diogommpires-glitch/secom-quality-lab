@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from secom_quality.common import read_json, write_json
+from secom_quality.common import fingerprint, read_json, write_json
 from secom_quality.vision import bundle, models, report, robustness, study
 from secom_quality.vision.metrics import paired_bootstrap
 from secom_quality.vision.protocol import candidate_configs
@@ -82,6 +82,10 @@ def test_complete_synthetic_research_lifecycle_including_interrupted_final_resum
         "candidate_configs": configs,
         "seeds": [20261026 + offset for offset in range(5)],
     }
+    protocol["protocol_hash"] = fingerprint(
+        {key: value for key, value in protocol.items() if key != "protocol_hash"}
+    )
+    write_json(tmp_path / "vision/research/protocol.json", protocol)
     fitted, loaded = [], []
 
     def fit(config, supplied_train, seed, output, device="cuda"):
@@ -104,6 +108,7 @@ def test_complete_synthetic_research_lifecycle_including_interrupted_final_resum
                 "config": config,
                 "training": {
                     "seed": seed,
+                    "training_rows": len(supplied_train),
                     "training_record_ids": supplied_train.record_id.tolist(),
                 },
             },
